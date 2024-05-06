@@ -1,0 +1,77 @@
+<style>
+    :root {
+        padding: 10px;
+    }
+
+    form {
+        display: flex;
+    }
+
+    input {
+        flex: 1;
+        padding: 10px;
+    }
+</style>
+
+<template>
+    <main>
+        <form @submit.prevent="submit">
+            <select v-model="icon" ref="select">
+                <option>👦🏻</option>
+                <option>👧🏻</option>
+                <option>🐶</option>
+                <option>🐱</option>
+                <option>🐭</option>
+                <option>🐹</option>
+                <option>🐰</option>
+                <option>🦊</option>
+                <option>🐻</option>
+                <option>🐼</option>
+                <option>🐨</option>
+                <option>🐯</option>
+                <option>🦁</option>
+                <option>🐮</option>
+                <option>🐷</option>
+                <option>🐸</option>
+                <option>🐵</option>
+                <option>🐺</option>
+                <option>🐗</option>
+                <option>🦝</option>
+                <option>🐴</option>
+                <option>🦄</option>
+                <option>🦓</option>
+            </select>
+            <input placeholder="Name" autocomplete="off" v-model.trim="name" v-focus>
+            <button>OK</button>
+        </form>
+    </main>
+</template>
+
+<script>
+    app.component({
+        data: () => ({
+            icon: '',
+            name: '',
+        }),
+
+        methods: {
+            submit() {
+                if (this.icon && this.name) {
+                    sessionStorage.setItem('icon', this.icon);
+                    sessionStorage.setItem('name', this.name);
+                    this.$router.push('/map');
+                }
+            },
+        },
+
+        created() {
+            this.$root.title = 'Index';
+        },
+
+        mounted() {
+            const el = this.$refs.select;
+            const i = Math.floor(Math.random() * el.options.length);
+            this.icon = el.options[i].value;
+        },
+    });
+</script>

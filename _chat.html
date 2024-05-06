@@ -1,0 +1,297 @@
+<style>
+    :root {
+        display: grid;
+        grid: 1fr auto / auto;
+        overflow: auto;
+    }
+
+    #chat {
+        display: flex;
+        flex-direction: column-reverse;
+        overflow-y: scroll;
+        padding: 5px;
+    }
+
+    #chat > section {
+        flex: 1;
+    }
+
+    #chat > div {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .message {
+        display: flex;
+        gap: 5px;
+    }
+
+    .message > div {
+        border: 1px solid #666;
+        border-radius: 5px;
+        padding: 5px;
+        min-width: 70px;
+        max-width: 500px;
+
+        background: #ccf;
+    }
+
+    .me {
+        justify-content: right;
+    }
+
+    .me > div {
+        background: #cfc;
+    }
+
+    .me .icon,
+    .me small {
+        display: none;
+    }
+
+    time,
+    small {
+        display: block;
+        text-align: right;
+        font-size: small;
+        color: #666;
+    }
+
+    #form {
+        display: flex;
+        padding: 10px;
+        background: #ccc;
+        border-top: 1px solid #333;
+    }
+
+    #text {
+        flex: 1;
+        padding: 10px;
+    }
+    
+    .image {
+        max-width: 200px;
+        max-height: 200px;
+        border: 1px solid #666;
+        display: block;
+        cursor: pointer;
+    }
+
+    .image:fullscreen {
+        object-fit: scale-down;
+        border: none !important;
+    }
+</style>
+
+<template>
+    <main>
+        <!-- Chat -------------------------------------------------------------------------------->
+        <div id="chat">
+            <section></section>
+            <div>
+                <div class="message" v-for="m of chat" :class="{ me: m.icon == icon && m.name == name }">
+                    <!-- Photo -->
+                    <span class="icon" :title="m.name">{{ m.icon }}</span>
+                    
+                    <!-- Message -->
+                    <div>
+                        <small>{{ m.name }}</small>
+
+                        <!-- Text -->
+                        <template v-if="m.type == 'text'">
+                            <div v-html="format(m.text)"></div>
+                        </template>
+                        
+                        <!-- Image -->
+                        <template v-if="m.type == 'image'">
+                            <img class="image" @click="fullscreen" :src="m.url">
+                        </template>
+
+                        <!-- File -->
+                        <template v-if="m.type == 'file'">
+                            <a :href="m.url" download>{{ m.filename }}</a>
+                        </template>
+
+                        <!-- Timestamp -->
+                        <time>{{ m.timestamp?.toDate().toLocaleTimeString() ?? '...' }}</time>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form -------------------------------------------------------------------------------->
+        <form id="form" autocomplete="off" @submit.prevent="send">
+            <input id="text" v-model.trim="text" v-focus>
+
+            <button type="button" @click="$refs.image.click()">🖼️</button>
+            <input type="file" multiple hidden accept="image/*" ref="image" @change="imageChange">
+
+            <button type="button" @click="$refs.file.click()">📄</button>
+            <input type="file" multiple hidden ref="file" @change="fileChange">
+        </form>
+    </main>
+</template>
+
+<script>
+    const CHAT = DB.collection('chat');
+    let unsub = null;
+
+    app.component({
+        data: () => ({ 
+            icon: '',
+            name: '',
+            text: '',
+            chat: [],
+        }),
+
+        methods: {
+            fullscreen(e) {
+                document.fullscreenElement ?
+                    document.exitFullscreen() :
+                    e.target.requestFullscreen();
+            },
+            send() {
+                if (this.text) {
+                    // Send text (type, text, icon, name, timestamp)
+                    CHAT.doc().set({
+                        type: 'text',
+                        text: this.text,
+                        icon: this.icon,
+                        name: this.name,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    });
+                }
+                this.text = '';
+            },
+            format(text) {
+                // Format text (if any)
+                text = $('<div>').text(text).html();
+                return text;
+            },
+            imageChange(e) {
+                const files = e.target.files;
+
+                for (const f of files) {
+                    // Send image (type, url, icon, name, timestamp)
+                    fit(f, 1000, 1000, 'blob', 'image/webp')
+                        .then(blob => {
+                            const doc = CHAT.doc();
+
+                            STORAGE
+                                .ref('chat')
+                                .child(doc.id + '.webp')
+                                .put(blob)
+                                .then(snap => snap.ref.getDownloadURL())
+                                .then(url => {
+                                    doc.set({
+                                        type: 'image',
+                                        url,
+                                        icon: this.icon,
+                                        name: this.name,
+                                        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                                    });
+                                });
+                        });
+                }
+
+                e.target.value = '';
+            },
+            fileChange(e) {
+                const files = e.target.files;
+                
+                for (const f of files) {
+                    // Send file (type, url, filename, icon, name, timestamp)
+                    const doc = CHAT.doc();
+                    const ext = f.name.split('.').pop();
+                    const metadata = {
+                        contentDisposition: `attachment; filename="${f.name}"`,
+                    };
+
+                    STORAGE
+                        .ref('chat')
+                        .child(doc.id + '.' + ext)
+                        .put(f, metadata)
+                        .then(snap => snap.ref.getDownloadURL())
+                        .then(url => {
+                            doc.set({
+                                type: 'file',
+                                url,
+                                filename: f.name,
+                                icon: this.icon,
+                                name: this.name,
+                                timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                            });
+                        });
+                }
+
+                e.target.value = '';
+            },
+        },
+     
+        async created() {
+            this.$root.title = 'Chat';
+
+            // Reject if no icon and name
+            this.icon = sessionStorage.getItem('icon');
+            this.name = sessionStorage.getItem('name');
+
+            if (!this.icon || !this.name) {
+                this.$router.push('/index');
+                return;
+            }
+
+            // Firestore --> Handle chat messages
+            unsub = CHAT
+                .orderBy('timestamp')
+                .limitToLast(10)
+                .onSnapshot(snap => {
+                    snap.docChanges().forEach(change => {
+                        const { type, doc, oldIndex, newIndex } = change;
+
+                        if (type == 'added') {
+                            console.log('added', oldIndex, newIndex);
+                            
+                            // Push message
+                            this.chat.push({ id: doc.id, ...doc.data() });
+                        }
+                        if (type == 'modified') {
+                            console.log('modified', oldIndex, newIndex);
+                            
+                            // Update timestamp
+                            const { timestamp } = doc.data();
+                            const m = this.chat.find(m => m.id == doc.id);
+                            m.timestamp = timestamp;
+                        }
+                        if (type == 'removed') {
+                            console.log('removed', oldIndex, newIndex);
+                            
+                            // Delete old chat messages
+                            const { timestamp, url } = doc.data();
+
+                            CHAT
+                                .where('timestamp', '<=', timestamp)
+                                .get()
+                                .then(snap => {
+                                    snap.forEach(doc => {
+                                        if (url) {
+                                            STORAGE.refFromURL(url).delete().catch(e => 0);
+                                        }
+                                        doc.ref.delete();
+                                    });
+                                });
+                        }
+                    })
+                });
+        },
+
+        mounted() {
+            
+        },
+
+        unmounted() {
+            // Firestore --> Unsubscribe snapshot listener
+            unsub?.();
+        },
+    });
+</script>

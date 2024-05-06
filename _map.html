@@ -1,0 +1,153 @@
+<style>
+    :root {
+        display: grid;
+        grid: auto;
+        padding: 0;
+    }
+
+    #div {
+        font: 16px 'Roboto' !important;
+        padding: 10px;
+    }
+
+    .table {
+        background: #fff;
+    }
+</style>
+
+<template>
+    <main>
+        <div id="map"></div>
+
+        <template>
+            <div id="div">
+                <button @click="getLocation" v-if="!watching">Get Location</button>
+                <button @click="stop" v-if="watching">Stop</button>
+                <table class="table" v-if="watching">
+                    <tr><td>Latitude</td><td>{{ latitude?.toFixed(6) }}</td></tr>
+                    <tr><td>Longitude</td><td>{{ longitude?.toFixed(6) }}</td></tr>
+                    <tr><td>Accuracy</td><td>{{ accuracy?.toFixed(3) }} m</td></tr>
+                    <tr><td>Altitude</td><td>{{ altitude?.toFixed(3) }} m</td></tr>
+                    <tr><td>Altitude Accuracy</td><td>{{ altitudeAccuracy?.toFixed(3) }} m</td></tr>
+                    <tr><td>Heading</td><td>{{ heading?.toFixed(3) }} deg</td></tr>
+                    <tr><td>Speed</td><td>{{ speed?.toFixed(3) }} ms</td></tr>
+                    <tr><td>Timestamp</td><td>{{ new Date(timestamp).toLocaleTimeString() }}</td></tr>
+                </table>
+            </div>
+        </template>
+    </main>
+</template>
+
+<script>
+    app.component({
+        data: () => ({
+            icon: '',
+            name: '',
+
+            latitude: 0,
+            longitude: 0,
+            accuracy: 0,
+            altitude: 0,
+            altitudeAccuracy: 0,
+            heading: 0,
+            speed: 0,
+            timestamp: 0,
+            
+            watchId: 0,
+            watching: false,
+
+            marker: null,
+        }),
+
+        methods: {
+            stop() {
+                // Stop watch position
+                navigator.geolocation.clearWatch(this.watchId);
+                this.watching = false;
+            },
+            getLocation() {
+                // Options: - enableHighAccuracy: false (default), or true
+                //          - timeout: Infinity (default), or number (ms)
+                //          - maximumAge: 0 (default), or number (ms)
+                const options = {
+                    enableHighAccuracy: true,
+                };
+
+                this.watchId = navigator.geolocation.watchPosition(this.success, this.fail, options);
+            },
+            success(position) {
+                // Update output, marker and map
+                this.latitude = position.coords.latitude;
+                this.longitude = position.coords.longitude;
+                this.accuracy = position.coords.accuracy;
+                this.altitude = position.coords.altitude;
+                this.altitudeAccuracy = position.coords.altitudeAccuracy;
+                this.heading = position.coords.heading;
+                this.speed = position.coords.speed;
+                this.timestamp = position.timestamp;
+                
+                const p = new gm.LatLng(this.latitude, this.longitude);
+                this.marker.setPosition(p);
+
+                if (!this.watching) map.panTo(p);
+
+                this.watching = true;
+            },
+            fail(error) {
+                alert(`ERROR: (${error.code}) ${error.message}`);
+            },
+        },
+
+        created() {
+            this.$root.title = 'Map';
+
+            // Reject if no icon and name
+            this.icon = sessionStorage.getItem('icon');
+            this.name = sessionStorage.getItem('name');
+
+            if (!this.icon || !this.name) {
+                this.$router.push('/index');
+                return;
+            }
+        },
+
+        mounted() {
+            // ================================================================
+            // Google Maps
+            // ================================================================
+
+            map = new gm.Map($('#map')[0], {
+                center,
+                zoom: 16,
+                disableDefaultUI: true,
+                disableDoubleClickZoom: true,
+                clickableIcons: false,
+                scaleControl: true,
+            });
+
+            const div = $('#div')[0];
+            map.controls[gm.ControlPosition.TOP_LEFT].push(div);
+
+            this.marker = new gm.Marker({
+                map,
+                animation: gm.Animation.DROP,
+                label: this.icon,
+                title: this.name,
+            });
+
+            // ================================================================
+            
+            // Permissions API:
+            // result.state = granted, prompt, denied
+            navigator.permissions.query({ name: 'geolocation'}).then(result => {
+                if (result.state == 'granted') {
+                    this.getLocation();
+                }
+            });
+        },
+
+        unmounted() {
+            map = null;
+        },
+    });
+</script>
